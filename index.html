@@ -126,7 +126,7 @@
         await loadMetadata();
 
         // Load model
-        model = await tf.loadLayersModel('model.json');
+       model = await tf.loadLayersModel("model.json", { requestInit: { cache: "no-store" } });
         setStatus('✅ Model loaded! Requesting camera…');
 
         // Setup webcam (prefer rear camera on phones)
@@ -198,4 +198,5 @@
     window.addEventListener('DOMContentLoaded', init);
   </script>
 </body>
+
 </html>
