@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Camera App — Waste Type Finder</title>
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet" />
+
+  <!-- TensorFlow.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Poppins', sans-serif; }
+
+    body {
+      background: linear-gradient(135deg, #1e1e2f, #232a3d);
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      text-align: center;
+      padding: 24px;
+    }
+
+    header { margin-bottom: 20px; }
+    header h1 {
+      font-size: 2rem;
+      font-weight: 600;
+      background: linear-gradient(to right, #00f2fe, #4facfe);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+    header p { opacity: 0.9; }
+
+    .camera-container {
+      position: relative;
+      background: #111827;
+      padding: 15px;
+      border-radius: 20px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
+      display: inline-block;
+      border: 2px solid #4facfe;
+    }
+
+    video {
+      border-radius: 12px;
+      max-width: 85vw;
+      width: 320px;
+      height: 320px;
+      object-fit: cover;
+      background: #000; /* fallback */
+    }
+
+    .prediction-box {
+      margin-top: 20px;
+      background: rgba(79, 172, 254, 0.1);
+      padding: 15px 25px;
+      border-radius: 12px;
+      font-size: 1.2rem;
+      font-weight: 500;
+      border: 2px solid #4facfe;
+      box-shadow: 0 4px 12px rgba(79, 172, 254, 0.4);
+      display: inline-block;
+      min-width: 260px;
+      word-break: break-word;
+    }
+
+    footer { margin-top: 40px; font-size: 0.9rem; color: #aaa; }
+
+    @media (max-width: 600px) {
+      header h1 { font-size: 1.6rem; }
+      .prediction-box { font-size: 1rem; padding: 10px 15px; min-width: 220px; }
+      video { width: 300px; height: 300px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Waste Type Finder</h1>
+    <p>Real-time predictions powered by your model</p>
+  </header>
+
+  <div class="camera-container">
+    <video id="webcam" autoplay playsinline muted></video>
+  </div>
+
+  <div id="prediction" class="prediction-box">Loading model…</div>
+
+  <footer>
+    <p>Made with ❤️ using TensorFlow.js &amp; Teachable Machine</p>
+  </footer>
+
+  <script>
+    'use strict';
+
+    let model;
+    let webcam;
+    let labels = [];
+    let loopId = null;
+    let isPredicting = false;
+
+    async function loadMetadata() {
+      try {
+        const res = await fetch('metadata.json', { cache: 'no-store' });
+        if (!res.ok) throw new Error('metadata.json not found');
+        const meta = await res.json();
+        if (Array.isArray(meta.labels)) labels = meta.labels;
+      } catch (e) {
+        console.warn('Metadata not loaded:', e.message);
+        labels = []; // fallback handled later
+      }
+    }
+
+    function setStatus(text) {
+      const el = document.getElementById('prediction');
+      el.textContent = text;
+    }
+
+    async function init() {
+      try {
+        await loadMetadata();
+
+        // Load model
+        model = await tf.loadLayersModel('model.json');
+        setStatus('✅ Model loaded! Requesting camera…');
+
+        // Setup webcam (prefer rear camera on phones)
+        webcam = document.getElementById('webcam');
+
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'environment' } },
+            audio: false
+          });
+        } catch (e) {
+          // Fallback if environment camera isn't available
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        }
+
+        webcam.srcObject = stream;
+
+        // Ensure playback starts (required on some mobile browsers)
+        await new Promise((resolve) => {
+          webcam.onloadedmetadata = () => {
+            webcam.play().then(resolve).catch(resolve);
+          };
+        });
+
+        setStatus('📷 Camera ready. Analyzing…');
+
+        // Start prediction loop (balanced frequency for mobile)
+        loopId = setInterval(predict, 800);
+      } catch (error) {
+        console.error(error);
+        setStatus('⚠️ Error loading model/camera. (Tip: use HTTPS like GitHub Pages)');
+      }
+    }
+
+    async function predict() {
+      if (!model || !webcam || isPredicting || webcam.readyState !== 4) return;
+      isPredicting = true;
+
+      // Use tf.tidy to avoid memory leaks
+      let probs = tf.tidy(() => {
+        const input = tf.browser.fromPixels(webcam)
+          .resizeNearestNeighbor([224, 224]) // must match Teachable Machine input size
+          .toFloat()
+          .expandDims(); // [1, 224, 224, 3]
+        const output = model.predict(input);
+        return output.dataSync(); // returns a typed array copy
+      });
+
+      // Convert to normal array
+      const arr = Array.from(probs);
+      const maxIndex = arr.indexOf(Math.max(...arr));
+      const label = labels[maxIndex] || `Class ${maxIndex + 1}`;
+      const confidence = (arr[maxIndex] * 100).toFixed(2);
+
+      setStatus(`Waste Type: ${label} (${confidence}%)`);
+
+      isPredicting = false;
+    }
+
+    // Clean up on page unload
+    window.addEventListener('beforeunload', () => {
+      if (loopId) clearInterval(loopId);
+      if (webcam && webcam.srcObject) {
+        webcam.srcObject.getTracks().forEach(t => t.stop());
+      }
+    });
+
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>
