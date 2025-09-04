@@ -104,62 +104,60 @@
     let loopId = null;
     let isPredicting = false;
 
+    // 🔹 Change this to your GitHub Pages repo URL
+    const baseURL = "https://vhiraj.github.io/Waste-Type-Finder/";
+
     async function loadMetadata() {
       try {
-        const res = await fetch("metadata.json", { cache: "no-store" });
-        if (!res.ok) throw new Error('metadata.json not found');
+        const res = await fetch(baseURL + "metadata.json", { cache: "no-store" });
+        if (!res.ok) throw new Error("metadata.json not found");
         const meta = await res.json();
         if (Array.isArray(meta.labels)) labels = meta.labels;
+        console.log("✅ Metadata loaded:", labels);
       } catch (e) {
-        console.warn('Metadata not loaded:', e.message);
-        labels = []; // fallback handled later
+        console.warn("Metadata not loaded:", e.message);
+        labels = [];
       }
     }
 
     function setStatus(text) {
-      const el = document.getElementById('prediction');
-      el.textContent = text;
+      document.getElementById("prediction").textContent = text;
     }
 
     async function init() {
       try {
         await loadMetadata();
 
-        // Load model
-       console.log("Loading model from:", window.location.href);
-       model = await tf.loadLayersModel("model.json", { requestInit: { cache: "no-store" } });
-        setStatus('✅ Model loaded! Requesting camera…');
+        console.log("Loading model from:", baseURL + "model.json");
+        model = await tf.loadLayersModel(baseURL + "model.json", { requestInit: { cache: "no-store" } });
+        console.log("✅ Model loaded successfully");
+        setStatus("✅ Model loaded! Requesting camera…");
 
-        // Setup webcam (prefer rear camera on phones)
-        webcam = document.getElementById('webcam');
+        webcam = document.getElementById("webcam");
 
         let stream;
         try {
           stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { ideal: 'environment' } },
+            video: { facingMode: { ideal: "environment" } },
             audio: false
           });
         } catch (e) {
-          // Fallback if environment camera isn't available
           stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         }
 
         webcam.srcObject = stream;
 
-        // Ensure playback starts (required on some mobile browsers)
         await new Promise((resolve) => {
           webcam.onloadedmetadata = () => {
             webcam.play().then(resolve).catch(resolve);
           };
         });
 
-        setStatus('📷 Camera ready. Analyzing…');
-
-        // Start prediction loop (balanced frequency for mobile)
+        setStatus("📷 Camera ready. Analyzing…");
         loopId = setInterval(predict, 800);
       } catch (error) {
         console.error(error);
-        setStatus('⚠️ Error loading model/camera. (Tip: use HTTPS like GitHub Pages)');
+        setStatus("⚠️ Error loading model/camera. (Tip: check HTTPS + camera permissions)");
       }
     }
 
@@ -167,38 +165,32 @@
       if (!model || !webcam || isPredicting || webcam.readyState !== 4) return;
       isPredicting = true;
 
-      // Use tf.tidy to avoid memory leaks
       let probs = tf.tidy(() => {
         const input = tf.browser.fromPixels(webcam)
-          .resizeNearestNeighbor([224, 224]) // must match Teachable Machine input size
+          .resizeNearestNeighbor([224, 224])
           .toFloat()
-          .expandDims(); // [1, 224, 224, 3]
+          .expandDims();
         const output = model.predict(input);
-        return output.dataSync(); // returns a typed array copy
+        return output.dataSync();
       });
 
-      // Convert to normal array
       const arr = Array.from(probs);
       const maxIndex = arr.indexOf(Math.max(...arr));
       const label = labels[maxIndex] || `Class ${maxIndex + 1}`;
       const confidence = (arr[maxIndex] * 100).toFixed(2);
 
       setStatus(`Waste Type: ${label} (${confidence}%)`);
-
       isPredicting = false;
     }
 
-    // Clean up on page unload
-    window.addEventListener('beforeunload', () => {
+    window.addEventListener("beforeunload", () => {
       if (loopId) clearInterval(loopId);
       if (webcam && webcam.srcObject) {
         webcam.srcObject.getTracks().forEach(t => t.stop());
       }
     });
 
-    window.addEventListener('DOMContentLoaded', init);
+    window.addEventListener("DOMContentLoaded", init);
   </script>
 </body>
-
 </html>
-
