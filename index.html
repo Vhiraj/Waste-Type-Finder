@@ -106,7 +106,7 @@
 
     async function loadMetadata() {
       try {
-        const res = await fetch('metadata.json', { cache: 'no-store' });
+        const res = await fetch("metadata.json", { cache: "no-store" });
         if (!res.ok) throw new Error('metadata.json not found');
         const meta = await res.json();
         if (Array.isArray(meta.labels)) labels = meta.labels;
@@ -126,6 +126,7 @@
         await loadMetadata();
 
         // Load model
+       console.log("Loading model from:", window.location.href);
        model = await tf.loadLayersModel("model.json", { requestInit: { cache: "no-store" } });
         setStatus('✅ Model loaded! Requesting camera…');
 
@@ -200,3 +201,4 @@
 </body>
 
 </html>
+
